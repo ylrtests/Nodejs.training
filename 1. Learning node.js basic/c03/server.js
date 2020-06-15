@@ -4,6 +4,7 @@ var app = express();
 var http = require('http').createServer(app);
 var io = require('socket.io')(http)
 var mongoose = require('mongoose');
+const { readSync } = require("fs");
 
 /* Sirve contenido estático que envia al servidor al cliente.
 En este caso el archivo index.html */
@@ -25,35 +26,74 @@ var messages = [
 
 app.get('/messages', (req, res) => {
     Message.find({}, (err, messages) => {
-        if(err){
+        if (err) {
             sendStatus(500)
         }
-        else{
+        else {
             res.send(messages)
         }
     })
 })
 
-app.post('/messages', (req, res) => {
-    var message = new Message(req.body)
-    message.save((err) => {
-        if (err) {
-            sendStatus(500)
+/**
+ * Ejemplo usando promises
+ * Cada vez que se retorna una promesa se usa then
+ */
+// app.post('/messages', (req, res) => {
+//     var message = new Message(req.body)
+
+//     message.save().then(() => {
+//         console.log('saved');
+//         return Message.findOne({ message: 'badword' })
+//     })
+//         .then((censored) => {
+//             if (censored) {
+//                 console.log('Censored words found', censored)
+//                 return Message.deleteOne({ _id: censored.id })
+//             }
+//             io.emit('message', req.body)
+//             res.sendStatus(200)
+//         })
+//         .then(() => {
+//             console.log('Removed censored message')
+//         })
+//         .catch(err => {
+//             res.sendStatus(500)
+//             return console.error(err)
+//         })
+// })
+
+
+/**
+ * Ejemplo usando async/await
+ * 
+ */
+app.post('/messages', async (req, res) => {
+    try {
+        var message = new Message(req.body)
+        var savedMessage = await message.save()
+        console.log('saved')
+
+        var censored = await Message.findOne({ message: 'badword' })
+
+        if (censored) {
+            await Message.remove({ _id: censored.id })
         }
         else {
             io.emit('message', req.body)
-            res.sendStatus(200)
-            Message.findOne({message: 'badword'}, (err, censored) => {
-                if(censored){
-                    console.log('Censored words found ',censored)
-                    Message.deleteOne({_id: censored.id}, (err) => {
-                        console.log("removed censored message")
-                    })
-                }
-            })
         }
-    })
+
+        res.sendStatus(200)
+
+    } catch (error) {
+        res.sendStatus(500)
+        return console.error(error)
+    } finally {
+        //logger.log('message post called')
+    }
 })
+
+
 
 io.on('connection', (socket) => {
     console.log("user conected")
